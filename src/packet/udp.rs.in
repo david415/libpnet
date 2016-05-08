@@ -25,11 +25,6 @@ pub struct Udp {
     payload: Vec<u8>,
 }
 
-fn checksum<T: PseudoHeader>(udp_packet: &UdpPacket, ip_packet: &T) -> u16 {
-    let pseudo_header = ip_packet.get_pseudo_header(Some(udp_packet.get_length() as u32));
-    rfc1071_checksum(udp_packet.packet(), Some(&pseudo_header[..]))
-}
-
 #[test]
 fn udp_header_ipv4_test() {
     use pnet::packet::ip::IpNextHeaderProtocols;
