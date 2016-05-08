@@ -11,18 +11,18 @@
 extern crate pnet;
 
 use std::env;
+use std::net::IpAddr;
 
-use pnet::packet::{Packet};
+use pnet::packet::Packet;
 use pnet::packet::ethernet::{EthernetPacket, EtherTypes};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use pnet::packet::ipv4::{Ipv4Packet};
-use pnet::packet::ipv6::{Ipv6Packet};
-use pnet::packet::udp::{UdpPacket};
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::udp::UdpPacket;
 
-use pnet::datalink::{datalink_channel};
-use pnet::datalink::DataLinkChannelType::{Layer2};
+use pnet::datalink;
 
-use pnet::util::{IpAddr, NetworkInterface, get_network_interfaces};
+use pnet::util::{NetworkInterface, get_network_interfaces};
 
 fn handle_udp_packet(interface_name: &str, source: IpAddr, destination: IpAddr, packet: &[u8]) {
     let udp = UdpPacket::new(packet);
@@ -113,6 +113,8 @@ fn handle_packet(interface_name: &str, ethernet: &EthernetPacket) {
 }
 
 fn main() {
+    use pnet::datalink::Channel::Ethernet;
+
     let iface_name = env::args().nth(1).unwrap();
     let interface_names_match = |iface: &NetworkInterface| iface.name == iface_name;
 
@@ -124,9 +126,10 @@ fn main() {
                               .unwrap();
 
     // Create a channel to receive on
-    let (_, mut rx) = match datalink_channel(&interface, 0, 4096, Layer2) {
-        Ok((tx, rx)) => (tx, rx),
-        Err(e) => panic!("packetdump: unable to create channel: {}", e)
+    let (_, mut rx) = match datalink::channel(&interface, &Default::default()) {
+        Ok(Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("packetdump: unhandled channel type: {}"),
+        Err(e) => panic!("packetdump: unable to create channel: {}", e),
     };
 
     let mut iter = rx.iter();

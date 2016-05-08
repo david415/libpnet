@@ -1,10 +1,12 @@
-// Copyright (c) 2014, 2015 Robert Clipsham <robert@octarineparrot.com>
+// Copyright (c) 2014-2016 Robert Clipsham <robert@octarineparrot.com>
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! Support for sending and receiving data link layer packets using the WinPcap library
 
 extern crate libc;
 
@@ -17,7 +19,9 @@ use std::slice;
 use std::sync::Arc;
 
 use bindings::{bpf, winpcap};
-use datalink::{DataLinkChannelIterator, DataLinkChannelType, DataLinkReceiver, DataLinkSender};
+use datalink;
+use datalink::Channel::Ethernet;
+use datalink::{EthernetDataLinkChannelIterator, EthernetDataLinkReceiver, EthernetDataLinkSender};
 use packet::Packet;
 use packet::ethernet::{EthernetPacket, MutableEthernetPacket};
 use util::NetworkInterface;
@@ -46,17 +50,43 @@ impl Drop for WinPcapPacket {
     }
 }
 
+/// WinPcap specific configuration
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Config {
+    /// The size of buffer to use when writing packets. Defaults to 4096
+    pub write_buffer_size: usize,
+
+    /// The size of buffer to use when reading packets. Defaults to 4096
+    pub read_buffer_size: usize,
+}
+
+impl<'a> From<&'a datalink::Config> for Config {
+    fn from(config: &datalink::Config) -> Config {
+        Config {
+            write_buffer_size: config.write_buffer_size,
+            read_buffer_size: config.read_buffer_size,
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Config {
+        Config {
+            write_buffer_size: 4096,
+            read_buffer_size: 4096,
+        }
+    }
+}
+
+/// Create a datalink channel using the WinPcap library
 #[inline]
-pub fn datalink_channel(network_interface: &NetworkInterface,
-                        read_buffer_size: usize,
-                        write_buffer_size: usize,
-                        _channel_type: DataLinkChannelType)
-    -> io::Result<(Box<DataLinkSender>, Box<DataLinkReceiver>)> {
+pub fn channel(network_interface: &NetworkInterface, config: &Config)
+    -> io::Result<datalink::Channel> {
     let mut read_buffer = Vec::new();
-    read_buffer.resize(read_buffer_size, 0u8);
+    read_buffer.resize(config.read_buffer_size, 0u8);
 
     let mut write_buffer = Vec::new();
-    write_buffer.resize(write_buffer_size, 0u8);
+    write_buffer.resize(config.write_buffer_size, 0u8);
 
     let adapter = unsafe {
         let net_if_str = CString::new(network_interface.name.as_bytes()).unwrap();
@@ -72,7 +102,7 @@ pub fn datalink_channel(network_interface: &NetworkInterface,
     }
 
     // Set kernel buffer size
-    let ret = unsafe { winpcap::PacketSetBuff(adapter, read_buffer_size as libc::c_int) };
+    let ret = unsafe { winpcap::PacketSetBuff(adapter, config.read_buffer_size as libc::c_int) };
     if ret == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -99,7 +129,7 @@ pub fn datalink_channel(network_interface: &NetworkInterface,
     unsafe {
         winpcap::PacketInitPacket(read_packet,
                                   read_buffer.as_mut_ptr() as winpcap::PVOID,
-                                  read_buffer_size as winpcap::UINT)
+                                  config.read_buffer_size as winpcap::UINT)
     }
 
     let write_packet = unsafe { winpcap::PacketAllocatePacket() };
@@ -114,7 +144,7 @@ pub fn datalink_channel(network_interface: &NetworkInterface,
     unsafe {
         winpcap::PacketInitPacket(write_packet,
                                   write_buffer.as_mut_ptr() as winpcap::PVOID,
-                                  write_buffer_size as winpcap::UINT)
+                                  config.write_buffer_size as winpcap::UINT)
     }
 
     let adapter = Arc::new(WinPcapAdapter { adapter: adapter });
@@ -128,16 +158,16 @@ pub fn datalink_channel(network_interface: &NetworkInterface,
         _read_buffer: read_buffer,
         packet: WinPcapPacket { packet: read_packet },
     });
-    Ok((sender, receiver))
+    Ok(Ethernet(sender, receiver))
 }
 
-pub struct DataLinkSenderImpl {
+struct DataLinkSenderImpl {
     adapter: Arc<WinPcapAdapter>,
     _write_buffer: Vec<u8>,
     packet: WinPcapPacket,
 }
 
-impl DataLinkSender for DataLinkSenderImpl {
+impl EthernetDataLinkSender for DataLinkSenderImpl {
     #[inline]
     fn build_and_send(&mut self,
                       num_packets: usize,
@@ -197,14 +227,14 @@ impl DataLinkSender for DataLinkSenderImpl {
 unsafe impl Send for DataLinkSenderImpl {}
 unsafe impl Sync for DataLinkSenderImpl {}
 
-pub struct DataLinkReceiverImpl {
+struct DataLinkReceiverImpl {
     adapter: Arc<WinPcapAdapter>,
     _read_buffer: Vec<u8>,
     packet: WinPcapPacket,
 }
 
-impl DataLinkReceiver for DataLinkReceiverImpl {
-    fn iter<'a>(&'a mut self) -> Box<DataLinkChannelIterator + 'a> {
+impl EthernetDataLinkReceiver for DataLinkReceiverImpl {
+    fn iter<'a>(&'a mut self) -> Box<EthernetDataLinkChannelIterator + 'a> {
         let buflen = unsafe { (*self.packet.packet).Length } as usize;
         Box::new(DataLinkChannelIteratorImpl {
             pc: self,
@@ -217,12 +247,12 @@ impl DataLinkReceiver for DataLinkReceiverImpl {
 unsafe impl Send for DataLinkReceiverImpl {}
 unsafe impl Sync for DataLinkReceiverImpl {}
 
-pub struct DataLinkChannelIteratorImpl<'a> {
+struct DataLinkChannelIteratorImpl<'a> {
     pc: &'a mut DataLinkReceiverImpl,
     packets: VecDeque<(usize, usize)>,
 }
 
-impl<'a> DataLinkChannelIterator<'a> for DataLinkChannelIteratorImpl<'a> {
+impl<'a> EthernetDataLinkChannelIterator<'a> for DataLinkChannelIteratorImpl<'a> {
     fn next(&mut self) -> io::Result<EthernetPacket> {
         // NOTE Most of the logic here is identical to FreeBSD/OS X
         if self.packets.is_empty() {

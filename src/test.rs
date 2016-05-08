@@ -8,7 +8,7 @@
 
 extern crate libc;
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, IpAddr};
 use std::sync::mpsc::channel;
 use std::thread;
 use std::iter::Iterator;
@@ -275,10 +275,10 @@ fn layer3_ipv4() {
 #[cfg(all(not(feature = "appveyor"), not(feature = "netmap")))]
 #[test]
 fn layer2() {
-    use datalink::{DataLinkChannelType, datalink_channel};
+    use datalink;
+    use datalink::Channel::Ethernet;
     use packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 
-    const MIN_PACKET_SIZE: usize = 64;
     const ETHERNET_HEADER_LEN: usize = 14;
 
     #[cfg(windows)]
@@ -334,12 +334,10 @@ fn layer2() {
 
     let (tx, rx) = channel();
 
-    let dlc = datalink_channel(&interface,
-                               MIN_PACKET_SIZE * 2,
-                               MIN_PACKET_SIZE * 2,
-                               DataLinkChannelType::Layer2);
+    let dlc = datalink::channel(&interface, &Default::default());
     let (mut dltx, mut dlrx) = match dlc {
-        Ok((tx, rx)) => (tx, rx),
+        Ok(Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("layer2: unexpected L2 packet type"),
         Err(e) => panic!("layer2: unable to create channel: {}", e),
     };
 

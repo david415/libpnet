@@ -1,10 +1,12 @@
-// Copyright (c) 2015, 2015 Robert Clipsham <robert@octarineparrot.com>
+// Copyright (c) 2015-2016 Robert Clipsham <robert@octarineparrot.com>
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! Support for sending and receiving data link layer packets using the netmap library
 
 #![allow(bad_style)]
 
@@ -21,12 +23,13 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::mem;
-use std::num;
 use std::ptr;
-use std::raw;
+use std::slice;
 use std::sync::Arc;
 
-use datalink::{DataLinkChannelIterator, DataLinkChannelType, DataLinkReceiver, DataLinkSender};
+use datalink;
+use datalink::Channel::Ethernet;
+use datalink::{EthernetDataLinkChannelIterator, EthernetDataLinkReceiver, EthernetDataLinkSender};
 use packet::Packet;
 use packet::ethernet::{EthernetPacket, MutableEthernetPacket};
 use util::NetworkInterface;
@@ -63,7 +66,7 @@ unsafe impl Sync for NmDesc {}
 
 impl NmDesc {
     fn new(iface: &NetworkInterface) -> io::Result<NmDesc> {
-        let ifname = CString::new(("netmap:".to_string() + &iface.name[..]).as_bytes());
+        let ifname = CString::new(("netmap:".to_owned() + &iface.name[..]).as_bytes());
         let desc = unsafe { nm_open(ifname.unwrap().as_ptr(), ptr::null(), 0, ptr::null()) };
 
         if desc.is_null() {
@@ -90,30 +93,44 @@ impl Drop for NmDesc {
     }
 }
 
+/// Netmap specific configuration
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Config;
+
+impl<'a> From<&'a datalink::Config> for Config {
+    fn from(_config: &datalink::Config) -> Config {
+        Config
+    }
+}
+
+impl Default for Config {
+    fn default() -> Config {
+        Config
+    }
+}
+
+/// Create a datalink channel using the netmap library
 #[inline]
-pub fn datalink_channel(network_interface: &NetworkInterface,
-                        _write_buffer_size: usize,
-                        _read_buffer_size: usize,
-                        _channel_type: DataLinkChannelType)
-    -> io::Result<(Box<DataLinkSender>, Box<DataLinkReceiver>)> {
+pub fn channel(network_interface: &NetworkInterface, _config: &Config)
+    -> io::Result<datalink::Channel> {
     // FIXME probably want one for each of send/recv
     let desc = NmDesc::new(network_interface);
     match desc {
         Ok(desc) => {
             let arc = Arc::new(desc);
 
-            Ok((Box::new(DataLinkSenderImpl { desc: arc.clone() }),
-                Box::new(DataLinkReceiverImpl { desc: arc })))
+            Ok(Ethernet(Box::new(DataLinkSenderImpl { desc: arc.clone() }),
+                        Box::new(DataLinkReceiverImpl { desc: arc })))
         }
         Err(e) => Err(e),
     }
 }
 
-pub struct DataLinkSenderImpl {
+struct DataLinkSenderImpl {
     desc: Arc<NmDesc>,
 }
 
-impl DataLinkSender for DataLinkSenderImpl {
+impl EthernetDataLinkSender for DataLinkSenderImpl {
     #[inline]
     fn build_and_send(&mut self,
                       num_packets: usize,
@@ -138,11 +155,8 @@ impl DataLinkSender for DataLinkSenderImpl {
                     let i = (*ring).cur;
                     let slot_ptr: *mut netmap_slot = mem::transmute(&mut (*ring).slot);
                     let buf = NETMAP_BUF(ring, (*slot_ptr.offset(i as isize)).buf_idx as isize);
-                    let slice = raw::Slice {
-                        data: buf,
-                        len: packet_size,
-                    };
-                    let meh = MutableEthernetPacket::new(mem::transmute(slice)).unwrap();
+                    let slice = slice::from_raw_parts_mut(buf as *mut u8, packet_size);
+                    let meh = MutableEthernetPacket::new(slice).unwrap();
                     (*slot_ptr.offset(i as isize)).len = packet_size as u16;
                     func(meh);
                     let next = nm_ring_next(ring, i);
@@ -170,23 +184,23 @@ impl DataLinkSender for DataLinkSenderImpl {
     }
 }
 
-pub struct DataLinkReceiverImpl {
+struct DataLinkReceiverImpl {
     desc: Arc<NmDesc>,
 }
 
-impl DataLinkReceiver for DataLinkReceiverImpl {
+impl EthernetDataLinkReceiver for DataLinkReceiverImpl {
     // FIXME Layer 3
-    fn iter<'a>(&'a mut self) -> Box<DataLinkChannelIterator + 'a> {
+    fn iter<'a>(&'a mut self) -> Box<EthernetDataLinkChannelIterator + 'a> {
         Box::new(DataLinkChannelIteratorImpl { pc: self })
     }
 }
 
-pub struct DataLinkChannelIteratorImpl<'a> {
+struct DataLinkChannelIteratorImpl<'a> {
     pc: &'a mut DataLinkReceiverImpl,
 }
 
-impl<'a> DataLinkChannelIterator<'a> for DataLinkChannelIteratorImpl<'a> {
-    fn next<'c>(&'c mut self) -> io::Result<EthernetPacket<'c>> {
+impl<'a> EthernetDataLinkChannelIterator<'a> for DataLinkChannelIteratorImpl<'a> {
+    fn next(&mut self) -> io::Result<EthernetPacket> {
         let desc = self.pc.desc.desc;
         let mut h: nm_pkthdr = unsafe { mem::uninitialized() };
         let mut buf = unsafe { nm_nextpkt(desc, &mut h) };
@@ -202,10 +216,7 @@ impl<'a> DataLinkChannelIterator<'a> for DataLinkChannelIteratorImpl<'a> {
             buf = unsafe { nm_nextpkt(desc, &mut h) };
         }
         Ok(EthernetPacket::new(unsafe {
-            mem::transmute(raw::Slice {
-                data: buf,
-                len: h.len as usize,
-            })
+            slice::from_raw_parts(buf, h.len as usize)
         }).unwrap())
     }
 }

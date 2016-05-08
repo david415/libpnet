@@ -6,13 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// FIXME Remove before 1.0
-#![feature(str_char)]
-
 extern crate pnet;
 
-use pnet::datalink::datalink_channel;
-use pnet::datalink::DataLinkChannelType::Layer2;
+use pnet::datalink;
 use pnet::packet::{MutablePacket, Packet};
 use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -66,11 +62,12 @@ pub fn build_udp4_packet(packet: &mut [u8], msg: &str) {
 
     {
         let data = udp_header.payload_mut();
-        data[0] = msg.char_at(0) as u8;
-        data[1] = msg.char_at(1) as u8;
-        data[2] = msg.char_at(2) as u8;
-        data[3] = msg.char_at(3) as u8;
-        data[4] = msg.char_at(4) as u8;
+        let msg = msg.as_bytes();
+        data[0] = msg[0];
+        data[1] = msg[1];
+        data[2] = msg[2];
+        data[3] = msg[3];
+        data[4] = msg[4];
     }
 
     let checksum = udp::ipv4_checksum(&udp_header.to_immutable(),
@@ -79,6 +76,8 @@ pub fn build_udp4_packet(packet: &mut [u8], msg: &str) {
 }
 
 fn main() {
+    use pnet::datalink::Channel::Ethernet;
+
     let interface_name = env::args().nth(1).unwrap();
     let destination = (&env::args().nth(2).unwrap()[..]).parse().unwrap();
     // Find the network interface with the provided name
@@ -89,8 +88,9 @@ fn main() {
                               .unwrap();
 
     // Create a channel to send on
-    let (mut tx, _) = match datalink_channel(interface, 64, 0, Layer2) {
-        Ok((tx, rx)) => (tx, rx),
+    let mut tx = match datalink::channel(interface, &Default::default()) {
+        Ok(Ethernet(tx, _)) => tx,
+        Ok(_) => panic!("rs_sender: unhandled channel type"),
         Err(e) => panic!("rs_sender: unable to create channel: {}", e)
     };
 

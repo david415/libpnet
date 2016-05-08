@@ -43,8 +43,8 @@
 //! ```no_run
 //! extern crate pnet;
 //!
-//! use pnet::datalink::datalink_channel;
-//! use pnet::datalink::DataLinkChannelType::Layer2;
+//! use pnet::datalink;
+//! use pnet::datalink::Channel::Ethernet;
 //! use pnet::packet::{Packet, MutablePacket};
 //! use pnet::util::{NetworkInterface, get_network_interfaces};
 //!
@@ -64,11 +64,9 @@
 //!                               .unwrap();
 //!
 //!     // Create a new channel, dealing with layer 2 packets
-//!     let (mut tx, mut rx) = match datalink_channel(&interface,
-//!                                                   4096,
-//!                                                   4096,
-//!                                                   Layer2) {
-//!         Ok((tx, rx)) => (tx, rx),
+//!     let (mut tx, mut rx) = match datalink::channel(&interface, &Default::default()) {
+//!         Ok(Ethernet(tx, rx)) => (tx, rx),
+//!         Ok(_) => panic!("Unhandled channel type"),
 //!         Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
 //!     };
 //!
@@ -107,12 +105,10 @@
 
 #![deny(missing_docs)]
 
-// FIXME Remove this once the std lib has stabilised
-#![feature(custom_attribute, plugin)]
-#![plugin(pnet_macros)]
+#![cfg_attr(feature = "nightly", feature(custom_attribute, plugin))]
+#![cfg_attr(feature = "nightly", plugin(pnet_macros_plugin))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-// See: https://github.com/Manishearth/rust-clippy/issues/373
-#![cfg_attr(feature="clippy", allow(explicit_counter_loop))]
 // We can't implement Iterator since we use streaming iterators
 #![cfg_attr(feature="clippy", allow(should_implement_trait))]
 
