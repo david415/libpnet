@@ -7,13 +7,10 @@
 // except according to those terms.
 
 use packet::{Packet, PseudoHeader};
-use pnet_macros_support::types::*;
 use util::rfc1071_checksum;
 use packet::ip::IpNextHeaderProtocol;
 
 use pnet_macros_support::types::*;
-
-use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// Represents an UDP Packet
 #[packet]

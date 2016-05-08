@@ -9,8 +9,8 @@
 use packet::ip::IpNextHeaderProtocol;
 use packet::{Packet, PseudoHeader, PrimitiveValues};
 use util::rfc1071_checksum;
-use pnet_macros_support::types::*;
 use std::net::Ipv4Addr;
+use pnet_macros_support::types::*;
 
 /// IPv4 header flags
 #[allow(non_snake_case)]
