@@ -6,13 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use packet::{Packet, PseudoHeader};
-use packet::ip::IpNextHeaderProtocol;
-use util::rfc1071_checksum;
-
 use pnet_macros_support::types::*;
 
-use std::net::{Ipv4Addr, Ipv6Addr};
 
 /// Represents an UDP Packet
 #[packet]
@@ -29,6 +24,7 @@ pub struct Udp {
 fn udp_header_ipv4_test() {
     use pnet::packet::ip::IpNextHeaderProtocols;
     use pnet::packet::ipv4::MutableIpv4Packet;
+    use std::net::Ipv4Addr;
 
     let mut packet = [0u8; 20 + 8 + 4];
     let ipv4_source = Ipv4Addr::new(192, 168, 0, 1);
@@ -77,6 +73,7 @@ fn udp_header_ipv4_test() {
 fn udp_header_ipv6_test() {
     use packet::ip::IpNextHeaderProtocols;
     use packet::ipv6::MutableIpv6Packet;
+    use std::net::Ipv6Addr;
 
     let mut packet = [0u8; 40 + 8 + 4];
     let next_header = IpNextHeaderProtocols::Udp;
