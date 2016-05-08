@@ -31,7 +31,8 @@ pub struct Ipv6 {
 }
 
 /// Represents an IPv6 Packet pseudo header
-#[packet] pub struct Ipv6PseudoHeader {
+#[packet]
+pub struct Ipv6PseudoHeader {
     #[construct_with(u16, u16, u16, u16, u16, u16, u16, u16)]
     source: Ipv6Addr,
     // RFC 2460:
@@ -50,13 +51,15 @@ pub struct Ipv6 {
     // is the Payload Length from the IPv6 header, minus the length of any extension headers
     // present between the IPv6 header and the upper-layer header.
     inner_packet_length: u32be,
-    zeros: u24be,
+
+    // padding is needed? XXX
+    padding: u24be,
     // RFC 2460:
     // The Next Header value in the pseudo-header identifies the upper-layer protocol (e.g., 6 for
     // TCP, or 17 for UDP). It will differ from the Next Header value in the IPv6 header if there
     // are extension headers between the IPv6 header and the upper-layer header.
     #[construct_with(u8)]
-    next_level_protocol: IpNextHeaderProtocol,
+    next_header: IpNextHeaderProtocol,
     #[payload]
     payload: Vec<u8>,
 }
@@ -76,13 +79,13 @@ impl<'p> PseudoHeader for Ipv6Packet<'p> {
         loop {
             if let Some(header) = pseudo_header_iter.next() {
                 pseudo_header.set_next_level_protocol(header.get_next_header());
-                pseudo_header.set_inner_packet_length(header.get_payload_length() as u32);
+                pseudo_header.set_inner_packet_length(header.get_payload_length() as usize);
             } else {
                 break;
             }
         }
         if let Some(inner_packet_length) = inner_packet_length {
-            pseudo_header.set_inner_packet_length(inner_packet_length as u32);
+            pseudo_header.set_inner_packet_length(inner_packet_length as usize);
         } 
 
         pseudo_header.to_immutable();
