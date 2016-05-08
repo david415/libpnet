@@ -161,23 +161,15 @@ impl<'p> PseudoHeader for Ipv4Packet<'p> {
         // Checksum pseudo-header
         // IPv4 source
         let source = self.get_source();
-        match source.octets() {
-            [a, b, c, d] => {
-                let src = vec![a, b, c, d];
-                sum = sum + (src[0] as u32) + (src[2] as u32) << 8;
-                sum = sum + src[1] as u32 + src[3] as u32;
-            }
-        }
+        let octets = source.octets();
+        sum += (octets[0] as u32) << 8 | octets[1] as u32;
+        sum += (octets[2] as u32) << 8 | octets[3] as u32;
 
         // IPv4 destination
         let destination = self.get_destination();
-        match destination.octets() {
-            [a, b, c, d] => {
-                let dst = vec![a, b, c, d];
-                sum = sum + (dst[0] as u32) + (dst[2] as u32) << 8;
-                sum = sum + dst[1] as u32 + dst[3] as u32;
-            }
-        }
+        let octets = destination.octets();
+        sum += (octets[0] as u32) << 8 | octets[1] as u32;
+        sum += (octets[2] as u32) << 8 | octets[3] as u32;
 
         // IPv4 Next level protocol
         let next_level_protocol = self.get_next_level_protocol();
