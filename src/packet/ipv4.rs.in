@@ -202,6 +202,10 @@ impl<'p> PseudoHeader for Ipv4Packet<'p> {
 
         PseudoHeaderIPv6IPv4::Ipv4PseudoHeader{pseudo_header.to_immutable()}
     }
+
+    fn get_pseudo_header_buffer(&self) -> [u8; 12] {
+        [0; 12]
+    }
 }
 
 fn ipv4_options_length(ipv4: &Ipv4Packet) -> usize {

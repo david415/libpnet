@@ -87,13 +87,13 @@ impl<'p, 'h> Iterator for Ipv6HeaderIter<'p, 'h> {
 
 impl<'p> PseudoHeader for Ipv6Packet<'p> {
     fn populate(&self, buffer: &mut [u8], inner_packet_length: Option<usize>) -> PseudoHeaderIPv6IPv4 {
-
         let mut pseudo_header = MutableIpv6PseudoHeaderPacket::new(&mut buffer[..]).unwrap();
         pseudo_header.set_source(self.get_source());
         pseudo_header.set_destination(self.get_destination());
         // Get the next_level_protocol and inner_packet_length from the last ipv6 header
+        let pseudo_header_iter = self.iter();
         loop {
-            if let Some(header) = self.next() {
+            if let Some(header) = pseudo_header_iter.next() {
                 pseudo_header.set_next_level_protocol(header.get_next_header());
                 pseudo_header.set_inner_packet_length(header.get_payload_length() as u32);
             } else {
@@ -105,6 +105,10 @@ impl<'p> PseudoHeader for Ipv6Packet<'p> {
         }
 
         PseudoHeaderIPv6IPv4::Ipv6PseudoHeader{pseudo_header.to_immutable()}
+    }
+
+    fn get_pseudo_header_buffer(&self) -> [u8; 40] {
+        [0; 40]
     }
 }
 
