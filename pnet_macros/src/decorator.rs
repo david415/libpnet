@@ -104,7 +104,7 @@ fn make_packet(ecx: &mut ExtCtxt, span: Span, name: String, vd: &ast::VariantDat
         },
         ast::VariantData::Tuple(ref fields, _) => {
             for ref field in fields {
-                if let None = field.node.ident() {
+                if let None = field.ident {
                     ecx.span_err(field.span, "all fields in a packet must be named");
                     return None;
                 }
@@ -115,7 +115,7 @@ fn make_packet(ecx: &mut ExtCtxt, span: Span, name: String, vd: &ast::VariantDat
     };
 
     for ref field in sfields {
-        let field_name = match field.node.ident() {
+        let field_name = match field.ident {
             Some(name) => name.to_string(),
             None => {
                 panic!("This shouldn't happen");
@@ -126,7 +126,7 @@ fn make_packet(ecx: &mut ExtCtxt, span: Span, name: String, vd: &ast::VariantDat
         let mut struct_length = None;
         let mut construct_with = Vec::new();
         let mut seen = Vec::new();
-        for attr in &field.node.attrs {
+        for attr in &field.attrs {
             let node = &attr.node.value.node;
             match *node {
                 ast::MetaItemKind::Word(ref s) => {
@@ -185,7 +185,7 @@ fn make_packet(ecx: &mut ExtCtxt, span: Span, name: String, vd: &ast::VariantDat
                             let node = &lit.node;
                             if let ast::LitKind::Str(ref s, _) = *node {
                                 let field_names: Vec<String> = sfields.iter().filter_map(|field| {
-                                    field.node.ident()
+                                    field.ident
                                         .map(|name| name.to_string())
                                         .and_then(|name| {
                                             if name == field_name {
@@ -219,7 +219,7 @@ fn make_packet(ecx: &mut ExtCtxt, span: Span, name: String, vd: &ast::VariantDat
             return None;
         }
 
-        let ty = match make_type(ty_to_string(&*field.node.ty), true) {
+        let ty = match make_type(ty_to_string(&*field.ty), true) {
             Ok(ty) => ty,
             Err(e) => {
                 ecx.span_err(field.span, &e);
@@ -558,7 +558,7 @@ fn handle_vec_primitive(cx: &mut GenContext,
                                 #[inline]
                                 #[allow(trivial_numeric_casts)]
                                 #[cfg_attr(feature = \"clippy\", allow(used_underscore_binding))]
-                                pub fn set_{name}(&mut self, vals: Vec<{inner_ty_str}>) {{
+                                pub fn set_{name}(&mut self, vals: &[{inner_ty_str}]) {{
                                     use std::ptr::copy_nonoverlapping;
                                     let mut _self = self;
                                     let current_offset = {co};
@@ -658,6 +658,21 @@ fn handle_vector_field(cx: &mut GenContext,
                                     }}.map(|packet| packet.from_packet())
                                       .collect::<Vec<_>>()
                                 }}
+
+                                /// Get the value of the {name} field as iterator
+                                #[inline]
+                                #[allow(trivial_numeric_casts)]
+                                #[cfg_attr(feature = \"clippy\", allow(used_underscore_binding))]
+                                pub fn get_{name}_iter(&self) -> {inner_ty_str}Iterable {{
+                                    use pnet::packet::FromPacket;
+                                    let _self = self;
+                                    let current_offset = {co};
+                                    let end = current_offset + {packet_length};
+
+                                    {inner_ty_str}Iterable {{
+                                        buf: &_self.packet[current_offset..end]
+                                    }}
+                                }}
                                 ",
                                 accessors = accessors,
                                 name = field.name,
@@ -669,7 +684,7 @@ fn handle_vector_field(cx: &mut GenContext,
                                 #[inline]
                                 #[allow(trivial_numeric_casts)]
                                 #[cfg_attr(feature = \"clippy\", allow(used_underscore_binding))]
-                                pub fn set_{name}(&mut self, vals: Vec<{inner_ty_str}>) {{
+                                pub fn set_{name}(&mut self, vals: &[{inner_ty_str}]) {{
                                     use pnet::packet::PacketSize;
                                     let _self = self;
                                     let mut current_offset = {co};
@@ -758,9 +773,16 @@ fn generate_packet_impl(cx: &mut GenContext, packet: &Packet, mutable: bool, nam
     fn generate_set_fields(packet: &Packet) -> String {
         let mut set_fields = String::new();
         for field in &packet.fields {
-            set_fields = set_fields + &format!("_self.set_{field}(packet.{field});\n",
-            field = field.name)[..];
-
+            match field.ty {
+                Type::Vector(_) => {
+                    set_fields = set_fields + &format!("_self.set_{field}(&packet.{field});\n",
+                    field = field.name)[..];
+                },
+                _ => {
+                    set_fields = set_fields + &format!("_self.set_{field}(packet.{field});\n",
+                    field = field.name)[..];
+                }
+            }
         }
 
         set_fields
@@ -772,7 +794,7 @@ fn generate_packet_impl(cx: &mut GenContext, packet: &Packet, mutable: bool, nam
         format!("/// Populates a {name}Packet using a {name} structure
              #[inline]
              #[cfg_attr(feature = \"clippy\", allow(used_underscore_binding))]
-             pub fn populate(&mut self, packet: {name}) {{
+             pub fn populate(&mut self, packet: &{name}) {{
                  let _self = self;
                  {set_fields}
              }}", name = &imm_name[..imm_name.len() - 6], set_fields = set_fields)
