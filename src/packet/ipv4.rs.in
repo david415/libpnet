@@ -200,7 +200,7 @@ impl<'p> PseudoHeader for Ipv4Packet<'p> {
             }
         }
 
-        PseudoHeaderIPv6IPv4{pseudo_header.to_immutable()}
+        PseudoHeaderIPv6IPv4::Ipv4PseudoHeader{pseudo_header.to_immutable()}
     }
 }
 

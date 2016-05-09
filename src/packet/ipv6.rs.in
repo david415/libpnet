@@ -7,7 +7,7 @@
 // except according to those terms.
 
 use packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use packet::{PseudoHeader, PrimitiveValues, PseudoHeaderIPv6IPv4};
+use packet::{Packet, PseudoHeader, PrimitiveValues, PseudoHeaderIPv6IPv4};
 use pnet_macros_support::types::*;
 
 use std::net::Ipv6Addr;
@@ -104,7 +104,7 @@ impl<'p> PseudoHeader for Ipv6Packet<'p> {
             pseudo_header.set_inner_packet_length(inner_packet_length as u32);
         }
 
-        PseudoHeaderIPv6IPv4{pseudo_header.to_immutable()}
+        PseudoHeaderIPv6IPv4::Ipv6PseudoHeader{pseudo_header.to_immutable()}
     }
 }
 
